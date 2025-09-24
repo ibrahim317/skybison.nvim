@@ -208,9 +208,12 @@ function M.start(initcmdline)
       vim.cmd("redraw")
 
       -- get input from user
-      local input = vim.fn.getchar()
-      if type(input) == "number" then
-        input = vim.fn.nr2char(input)
+      local raw_input = vim.fn.getchar()
+      local input
+      if type(raw_input) == 'number' then
+        input = vim.fn.nr2char(raw_input)
+      else
+        input = vim.api.nvim_replace_termcodes(raw_input, false, true, true)
       end
 
       -- process input
@@ -225,7 +228,7 @@ function M.start(initcmdline)
         break
       elseif input == "\x16" then -- <c-v>
         ctrlv = true
-      elseif input == "\x7f" or input == "\x08" then -- <bs> or <c-h>
+      elseif input == "<BS>" or input == "<C-H>" or raw_input == "<80>kb" or input == "\x7f" or input == "\x08" then -- <bs> or <c-h>
         if #cmdline > 0 then
           cmdline = cmdline:sub(1, #cmdline - 1)
         end
@@ -265,7 +268,7 @@ function M.start(initcmdline)
           cmdline = (cmdline_head ~= "" and (cmdline_head .. ' ') or "") .. results[1]
         end
         break
-      elseif input == "\x10" or input == "k" then -- <c-p> or <up>
+      elseif input == "<Up>" or input == "\x10" or input == "k" then -- <c-p> or <up>
         if histnr > 0 then
           if histnr == vim.fn.histnr(':') + 1 then
             cmdline_newest = cmdline
@@ -273,7 +276,7 @@ function M.start(initcmdline)
           histnr = histnr - 1
           cmdline = vim.fn.histget(':', histnr)
         end
-      elseif input == "\x0e" or input == "j" then -- <c-n> or <down>
+      elseif input == "<Down>" or input == "\x0e" or input == "j" then -- <c-n> or <down>
         if histnr < vim.fn.histnr(':') then
           histnr = histnr + 1
           cmdline = vim.fn.histget(':', histnr)
