@@ -25,12 +25,12 @@ To install SkyBison using `lazy.nvim`, add the following to your configuration:
 
 ```lua
 {
-  "ibrahim317/skybison",
+  "paradigm/skybison",
   -- If you are installing it from a local path, you can use the `dir` option:
   -- dir = "/path/to/your/local/skybison",
-  config = function()
-    -- Configuration goes here, if any in the future.
-  end,
+  opts = {
+    fuzz = 1, -- 0 = none, 1 = full (default), 2 = substring
+  }
 }
 ```
 
@@ -55,22 +55,11 @@ vim.keymap.set("n", "<leader>t", "<Cmd>SkyBison tag <CR>", { noremap = true, sil
 
 ### Options
 
-You can configure SkyBison's fuzziness and other options by setting global variables in your Neovim configuration:
+SkyBison is configured via the `opts` table in your plugin manager.
 
--   `g:skybison_fuzz`: Controls the fuzzy matching behavior.
-    -   `0`: No fuzzy matching (default).
-    -   `1`: Full fuzzy matching (characters in order, but with anything in between).
+-   **`fuzz`**: Controls the fuzzy matching behavior.
+    -   `0`: No fuzzy matching.
+    -   `1`: Full fuzzy matching (default).
     -   `2`: Substring matching.
 
--   `g:skybison_numberselect`: Toggles whether you can select a completion by typing its number.
-    -   `1`: Enabled (default).
-    -   `0`: Disabled.
-
-You can set these in your `init.lua` like this:
-
-```lua
-vim.g.skybison_fuzz = 1
-vim.g.skybison_numberselect = 0
-```
-
-For more detailed usage instructions and a full list of keybindings within the SkyBison prompt, please see the original `doc/skybison.txt`.
+For more detailed usage instructions and a full list of keybindings, please see the original `doc/skybison.txt`.

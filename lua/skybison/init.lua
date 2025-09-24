@@ -1,5 +1,16 @@
 local M = {}
 
+local config = {
+  fuzz = 1, -- Default to "full" fuzzy matching. 0 = none, 1 = full, 2 = substring.
+}
+
+function M.setup(opts)
+  opts = opts or {}
+  if opts.fuzz ~= nil then
+    config.fuzz = opts.fuzz
+  end
+end
+
 function M.start(initcmdline)
   initcmdline = initcmdline or ""
 
@@ -137,7 +148,7 @@ function M.start(initcmdline)
 
       -- fuzz the cmdline
       local fuzzed_tail
-      local fuzz_level = vim.g.skybison_fuzz or 0
+      local fuzz_level = config.fuzz
       if fuzz_level == 1 then
         fuzzed_tail = cmdline_tail:gsub(".", "*%0")
       elseif fuzz_level == 2 then
