@@ -38,7 +38,7 @@ function M.start(initcmdline)
     vim.o.showmode = saved_settings.initshowmode
     vim.o.shellslash = saved_settings.initshellslash
     vim.o.winheight = saved_settings.initwinheight
-    pcall(vim.cmd, 'hide')
+    -- pcall(vim.cmd, 'hide') -- This is no longer needed for floating windows
     vim.cmd(saved_settings.initwinnr .. "wincmd w")
     vim.cmd(saved_settings.winsizecmd)
     vim.cmd("redraw")
@@ -49,6 +49,14 @@ function M.start(initcmdline)
     end
   end
 
+  local win_id = nil
+  local function close_and_cleanup(cmdline)
+    if win_id and vim.api.nvim_win_is_valid(win_id) then
+      vim.api.nvim_win_close(win_id, true)
+    end
+    cleanup(cmdline)
+  end
+
   -- Use pcall to make sure we always properly clean up.
   local status, result = pcall(function()
     -- set and save global settings to restore on exit
@@ -57,43 +65,40 @@ function M.start(initcmdline)
     vim.o.shellslash = true
     vim.o.winheight = 1
 
-    -- setup output window
-    vim.cmd("botright 11new")
-    local sbwinnr = vim.fn.winnr()
-    vim.cmd('normal "10oggzt"')
-    for i = 1, 11 do
-      vim.api.nvim_buf_set_lines(0, i - 1, i, false, {""})
-    end
-    vim.cmd("nohlsearch")
-    vim.wo.cursorcolumn = false
-    vim.wo.cursorline = false
-    vim.wo.number = false
-    vim.wo.wrap = false
-    vim.bo.bufhidden = "delete"
-    if vim.fn.exists("&relativenumber") == 1 then
-      vim.wo.relativenumber = false
-    end
+    -- Create a scratch buffer for the floating window
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = 'hide'
+    vim.bo[buf].buftype = 'nofile'
+    vim.bo[buf].swapfile = false
 
-    -- syntax highlighting
-    vim.cmd('syntax match LineNr  /^[0-9·]/')
-    vim.cmd('syntax match MoreMsg /^-.*/')
-    vim.cmd('syntax match Comment /^\\[.*/')
-    vim.cmd('syntax match Comment /^:.*_$/hs=e')
+    -- Window configuration
+    local width = vim.o.columns
+    local height = 11
+    local row = vim.o.lines - height
+    local col = 0
 
-    -- remove any signs that could be placed in the output window
-    local signs_output = vim.fn.execute('sign place buffer=' .. vim.api.nvim_get_current_buf())
-    if #vim.fn.split(signs_output, '\\n') > 1 then
-      vim.cmd("sign unplace * buffer=" .. vim.api.nvim_get_current_buf())
-    end
-    
-    -- initialize other variables
-    local cmdline = initcmdline
-    local ctrlv = false
-    local histnr = vim.fn.histnr(':') + 1
-    local cmdline_newest = ""
+    win_id = vim.api.nvim_open_win(buf, true, {
+      relative = 'editor',
+      width = width,
+      height = height,
+      row = row,
+      col = col,
+      style = 'minimal',
+      border = 'none'
+    })
 
-    -- main loop
-    while true do
+    vim.wo[win_id].winhighlight = 'Normal:FloatBorder,CursorLine:PmenuSel'
+    vim.wo[win_id].cursorline = true
+    vim.wo[win_id].number = false
+    vim.wo[win_id].relativenumber = false
+    vim.wo[win_id].wrap = false
+
+    local function update_ui()
+      local cmdline = vim.api.nvim_buf_get_lines(buf, 10, 11, false)[1] or ":"
+      cmdline = cmdline:sub(2)
+
+      local vcount = vim.v.count
+
       -- get various aspects of the current cmdline
       local cmdline_terms = vim.fn.split(cmdline, '\\s\\+')
       if cmdline:sub(-1) == ' ' then
@@ -124,7 +129,6 @@ function M.start(initcmdline)
         fuzzed_tail = cmdline_tail
       end
 
-      -- asterisks break some corner cases
       if fuzzed_tail:sub(1, 2) == '*/' or fuzzed_tail:sub(1, 2) == '*.' then
         fuzzed_tail = fuzzed_tail:sub(2)
       end
@@ -141,109 +145,58 @@ function M.start(initcmdline)
         fuzzed_cmdline = ''
       end
 
-      -- highlight cmdline_tail in results
-      vim.cmd('syntax clear Identifier')
-      if fuzzed_tail ~= '' then
-        local escaped_tail = fuzzed_tail:gsub("[\\/]", "\\%0")
-        if escaped_tail:sub(1, 1) == '*' then
-          escaped_tail = escaped_tail:sub(2)
-        end
-        escaped_tail = escaped_tail:gsub("%*", "\\.\\*")
-        vim.cmd('syntax match Identifier /\\V\\c' .. escaped_tail .. '/')
-      end
-
-      -- move focus back to previous window so buffer/window-specific items are properly completed
-      vim.cmd(saved_settings.initwinnr .. "wincmd w")
-
       -- Determine cmdline-completion options
+      vim.cmd(saved_settings.initwinnr .. "wincmd w")
       local results = vim.fn.getcompletion(fuzzed_cmdline, 'cmdline')
-      
-      -- switch back to skybison window
-      vim.cmd(sbwinnr .. "wincmd w")
+      vim.api.nvim_set_current_win(win_id)
 
       -- output
-      -- clear buffer
-      vim.api.nvim_buf_set_lines(0, 0, -1, false, {})
-
-      local counter = 1
-      local linenumber = 10 - #results
-      if #results > 1 and #results < 10 then
-        linenumber = linenumber + 1
-      end
+      local numberselect = vim.g.skybison_numberselect
+      if numberselect == nil then numberselect = 1 end
 
       local display_results = {}
       for i = 1, math.min(#results, 9) do
-        local result = results[i]
         if numberselect == 1 then
-          table.insert(display_results, counter .. " " .. result)
+          table.insert(display_results, string.format("%d %s", i, results[i]))
         else
-          table.insert(display_results, "· " .. result)
+          table.insert(display_results, "· " .. results[i])
         end
-        counter = counter + 1
       end
-      vim.api.nvim_buf_set_lines(0, linenumber - #display_results, linenumber, false, display_results)
+
+      local top_lines = {}
+      for i = 1, 10 - #display_results do table.insert(top_lines, "") end
+      for _, r in ipairs(display_results) do table.insert(top_lines, r) end
       
       if #results == 0 then
-        vim.api.nvim_buf_set_lines(0, 9, 10, false, {"[No Results]"})
-      elseif #results == 1 then
-        if #cmdline_terms == vcount and vcount ~= 0 then
-          cmdline = (cmdline_head ~= "" and (cmdline_head .. ' ') or "") .. results[1]
-          break
-        else
-          if ctrlv then
-            vim.api.nvim_buf_set_lines(0, 9, 10, false, {"Press <CR> to run cmdline as entered"})
-          else
-            vim.api.nvim_buf_set_lines(0, 9, 10, false, {'Press <CR> to select and run with "' .. results[1] .. '"'})
-          end
-        end
+        top_lines[10] = "[No Results]"
       elseif #results > 9 then
-        vim.api.nvim_buf_set_lines(0, 9, 10, false, {"-- more --"})
+        top_lines[10] = "-- more --"
       end
 
-      if ctrlv then
-        vim.api.nvim_buf_set_lines(0, 10, 11, false, {":" .. cmdline .. "^"})
-      else
-        vim.api.nvim_buf_set_lines(0, 10, 11, false, {":" .. cmdline .. "_"})
-      end
-      vim.cmd("redraw")
+      vim.api.nvim_buf_set_lines(buf, 0, 10, false, top_lines)
+    end
 
-      -- get input from user
-      local raw_input = vim.fn.getchar()
-      local input
-      if type(raw_input) == 'number' then
-        input = vim.fn.nr2char(raw_input)
-      else
-        input = vim.api.nvim_replace_termcodes(raw_input, false, true, true)
-      end
+    local function setup_buffer_features()
+      vim.api.nvim_create_autocmd("TextChangedI", {
+        buffer = buf,
+        callback = update_ui
+      })
 
-      -- process input
-      if ctrlv then
-        if input == "\r" then
-          break
-        end
-        ctrlv = false
-        cmdline = cmdline .. input
-      elseif input == "\x1b" then -- <esc>
-        cmdline = ""
-        break
-      elseif input == "\x16" then -- <c-v>
-        ctrlv = true
-      elseif input == "<BS>" or input == "<C-H>" or raw_input == "<80>kb" or input == "\x7f" or input == "\x08" then -- <bs> or <c-h>
-        if #cmdline > 0 then
-          cmdline = cmdline:sub(1, #cmdline - 1)
-        end
-      elseif input == "\x15" then -- <c-u>
-        cmdline = ""
-      elseif input == "\x17" then -- <c-w>
-        if cmdline:sub(-1) == " " then
-          cmdline = cmdline:sub(1, #cmdline -1)
-        end
-        while #cmdline > 0 and cmdline:sub(-1) ~= " " do
-          cmdline = cmdline:sub(1, #cmdline -1)
-        end
-      elseif input == "\t" or input == "\x0c" then -- <tab> or <c-l>
+      vim.keymap.set('i', '<Esc>', function()
+        close_and_cleanup("")
+      end, { buffer = buf, nowait = true })
+
+      vim.keymap.set('i', '<CR>', function()
+        local line = vim.api.nvim_buf_get_lines(buf, 10, 11, false)[1] or ":"
+        local final_cmdline = line:sub(2) -- strip leading ':'
+        close_and_cleanup(final_cmdline)
+      end, { buffer = buf, nowait = true })
+
+      vim.keymap.set('i', '<Tab>', function()
+        local line = vim.api.nvim_buf_get_lines(buf, 10, 11, false)[1] or ":"
+        local cmdline = line:sub(2)
+        local results = vim.fn.getcompletion(cmdline, 'cmdline')
         if #results > 0 then
-          -- Find longest common prefix
           local first = results[1]
           local max_len = #first
           for i = 2, #results do
@@ -256,51 +209,68 @@ function M.start(initcmdline)
                 break
               end
             end
-            if len < max_len then
-              max_len = len
-            end
+            if len < max_len then max_len = len end
           end
           local prefix = first:sub(1, max_len)
-          cmdline = (cmdline_head ~= "" and (cmdline_head .. ' ') or "") .. prefix
-        end
-      elseif input == "\r" then -- <cr>
-        if #results == 1 then
-          cmdline = (cmdline_head ~= "" and (cmdline_head .. ' ') or "") .. results[1]
-        end
-        break
-      elseif input == "<Up>" or input == "\x10" or input == "k" then -- <c-p> or <up>
-        if histnr > 0 then
-          if histnr == vim.fn.histnr(':') + 1 then
-            cmdline_newest = cmdline
+
+          local cmdline_terms = vim.fn.split(cmdline, '\\s\\+')
+          local cmdline_head_terms = {}
+          if #cmdline_terms > 1 then
+            for j = 1, #cmdline_terms - 1 do
+              table.insert(cmdline_head_terms, cmdline_terms[j])
+            end
           end
-          histnr = histnr - 1
-          cmdline = vim.fn.histget(':', histnr)
+          local cmdline_head = table.concat(cmdline_head_terms, ' ')
+          
+          local new_cmdline = cmdline_head .. (#cmdline_head > 0 and ' ' or '') .. prefix
+          vim.api.nvim_buf_set_lines(buf, 10, 11, false, {":" .. new_cmdline})
+          vim.api.nvim_win_set_cursor(win_id, {11, #new_cmdline + 1})
         end
-      elseif input == "<Down>" or input == "\x0e" or input == "j" then -- <c-n> or <down>
-        if histnr < vim.fn.histnr(':') then
-          histnr = histnr + 1
-          cmdline = vim.fn.histget(':', histnr)
-        else
-          histnr = vim.fn.histnr(':') + 1
-          cmdline = cmdline_newest
-        end
-      elseif input == "\x07" then -- <c-g>
-        numberselect = 1 - numberselect
-      elseif tonumber(input) and numberselect == 1 and #results >= tonumber(input) then
-          cmdline = cmdline_head .. ' ' .. results[tonumber(input)]
-      else
-        cmdline = cmdline .. input
+      end, { buffer = buf, nowait = true })
+
+      for i = 1, 9 do
+        vim.keymap.set('i', tostring(i), function()
+            local line = vim.api.nvim_buf_get_lines(buf, 10, 11, false)[1] or ":"
+            local cmdline = line:sub(2)
+
+            local cmdline_terms = vim.fn.split(cmdline, '\\s\\+')
+            local cmdline_head_terms = {}
+            if #cmdline_terms > 1 then
+              for j = 1, #cmdline_terms - 1 do
+                table.insert(cmdline_head_terms, cmdline_terms[j])
+              end
+            end
+            local cmdline_head = table.concat(cmdline_head_terms, ' ')
+            
+            -- This is a bit simplified, but should work for now
+            local results = vim.fn.getcompletion(cmdline, 'cmdline')
+            if #results >= i then
+              local new_cmdline = cmdline_head .. (#cmdline_head > 0 and ' ' or '') .. results[i]
+              vim.api.nvim_buf_set_lines(buf, 10, 11, false, {":" .. new_cmdline})
+              vim.api.nvim_win_set_cursor(win_id, {11, #new_cmdline + 1})
+            end
+        end, { buffer = buf, nowait = true })
       end
     end
 
-    return cmdline
+    setup_buffer_features()
+
+    -- Initialize buffer content
+    local initial_lines = {}
+    for i = 1, 10 do table.insert(initial_lines, "") end
+    table.insert(initial_lines, ":" .. initcmdline)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, initial_lines)
+
+    vim.api.nvim_set_current_win(win_id)
+    vim.api.nvim_win_set_cursor(win_id, {height, #(":" .. initcmdline)})
+    vim.cmd('startinsert!')
   end)
 
   if not status then
     vim.api.nvim_err_writeln("SkyBison: This error occurred: " .. vim.inspect(result))
     cleanup("")
   else
-    cleanup(result)
+    -- cleanup is now handled by the keymaps
   end
 end
 
