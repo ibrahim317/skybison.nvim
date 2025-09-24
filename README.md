@@ -25,7 +25,7 @@ To install SkyBison using `lazy.nvim`, add the following to your configuration:
 
 ```lua
 {
-  "paradigm/skybison",
+  "ibrahim317/skybison",
   -- If you are installing it from a local path, you can use the `dir` option:
   -- dir = "/path/to/your/local/skybison",
   config = function()
