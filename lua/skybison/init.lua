@@ -1,7 +1,7 @@
 local M = {}
 
 local config = {
-  fuzz = 1, -- Default to "full" fuzzy matching. 0 = none, 1 = full, 2 = substring.
+  fuzz = 0, -- 0 = none, 1 = full, 2 = substring.
 }
 
 function M.setup(opts)
