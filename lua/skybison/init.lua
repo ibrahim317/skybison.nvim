@@ -54,6 +54,7 @@ function M.start(initcmdline)
     if win_id and vim.api.nvim_win_is_valid(win_id) then
       vim.api.nvim_win_close(win_id, true)
     end
+    vim.cmd('stopinsert')
     cleanup(cmdline)
   end
 
@@ -87,11 +88,27 @@ function M.start(initcmdline)
       border = 'none'
     })
 
-    vim.wo[win_id].winhighlight = 'Normal:FloatBorder,CursorLine:PmenuSel'
+    -- Setup custom highlight groups
+    vim.api.nvim_set_hl(0, 'SkyBisonFloat', { link = 'NormalFloat' })
+    vim.api.nvim_set_hl(0, 'SkyBisonSelection', { link = 'PmenuSel' })
+    vim.api.nvim_set_hl(0, 'SkyBisonBorder', { link = 'FloatBorder' })
+
+    vim.wo[win_id].winhighlight = 'Normal:SkyBisonFloat,CursorLine:SkyBisonSelection,FloatBorder:SkyBisonBorder'
     vim.wo[win_id].cursorline = true
     vim.wo[win_id].number = false
     vim.wo[win_id].relativenumber = false
     vim.wo[win_id].wrap = false
+
+    -- Syntax highlighting
+    vim.api.nvim_set_hl(0, 'SkyBisonLineNr', { link = 'Comment' })
+    vim.api.nvim_set_hl(0, 'SkyBisonMoreMsg', { link = 'MoreMsg' })
+    vim.api.nvim_set_hl(0, 'SkyBisonComment', { link = 'Comment' })
+    vim.api.nvim_set_hl(0, 'SkyBisonPrompt', { link = 'Normal' })
+
+    vim.fn.matchadd('SkyBisonLineNr', '^[0-9·]', 10, -1, { window = win_id })
+    vim.fn.matchadd('SkyBisonMoreMsg', '^--.*', 10, -1, { window = win_id })
+    vim.fn.matchadd('SkyBisonComment', '^\\[.*', 10, -1, { window = win_id })
+    vim.fn.matchadd('SkyBisonPrompt', '^:.*', 10, -1, { window = win_id })
 
     local function update_ui()
       local cmdline = vim.api.nvim_buf_get_lines(buf, 10, 11, false)[1] or ":"
